@@ -1,0 +1,176 @@
+Regular Expressions:
+--------------------
+1. [1-3] matches 1,2,3
+2. [a-b] matches a, b
+3. [a-b][1-3] Represents two consecutive characters
+4. + matches one or more of the immediate left entity
+5. * matches zero or more of the immediate left entity
+6. Anything outside of the [] are matched directly for example [a-b]%
+7. | represents OR
+8. ? zero or more of the immediate left entity
+    It means control can go to the next character without consuming
+    the immediate left character in the regexp.
+    For example: r'-?[0-9]+. Here the first character is optional.
+9. \ denotes the escape character.
+10. . represents any character except \n
+11. ^ represents NOT Example: [0-9][^ab] ie the second character is NOT a and NOT
+    b that is it is anything other than a and b.
+12. Grouping is done by (?: some regexp )
+
+
+# Regular Expressions always consume or match the biggest string that they can.
+# In Python we can use the module re.
+# r'....'
+# re.findall()
+# In background Python takes the regular expression and creates a finite state
+  machine for it and then computes the result.
+
+
+Lexer:
+------
+For html we need the following tokens (TOKENS are given uppercase names):
+RANGLE           >
+LANGLE           <
+LANGLESLASH      </
+SLASHRANGLE      />
+WORD             [^ \n\v\r<>=]+
+STRING           (?:\'[^\']*\')|(?:\"[^\"]*\")
+EQUAL            =
+NUMBER           [0-9]+
+WHITESPACE       \n\v\r\t # these will be ignored by various ways
+
+We will different set of rules for html comments and embedded javascript by using conditional lexing.
+
+Basic framework of the lexer:
+
+import lex.ply
+class HtmlLexer:
+
+    # list of tokens
+    tokens = (
+          'LANGLE',       # <
+          'LANGLESLASH',  # </
+          'RANGLE',       # >
+          'STRING',       # something within single quotes or double quotes. <a href="www.google.com"> text to appear </a> Also drop the quotes before returning.
+                  # 'This is the "value" of the webpage.' -> value will have string type and others will have word type.
+          'WORD',         # a word without = , < > , no white spaces. bold, tags, etc. a, href, etc. Put the word definition below string so that quotes strings do not get counted as words.
+          'EQUAL',        # =
+          'JAVASCRIPT'    # within script tags.
+    )
+
+    states = (
+        ('htmlcomments','exclusive'),
+        ('javascript','exclusive'),
+    )
+
+    # Regular Expressions by function definitions and strings
+
+
+    # Hangle line numbers (\n)
+    # Handle white spaces (\v\r\t)
+    # Handle errors ie unmatched characters
+
+    # build the lexer function
+    # give input function
+    # give output function
+
+states needed: We need everything within a html comment to be ignored while increasing the lineno. so
+have a state of htmlcomments.
+Javascript is also handled differently, as every text within the javascript is put inside the javascript
+token without putting them inside the other tokens like the string, word, numbers, etc.
+i. htmlcomments
+ii. javascript
+
+<html> This is a <b> webpage <!-- with a comment </b> this tag is a comment --> source code </b> </html>
+The </b> within the comment will cause problems if we do not ignore all the default rules while
+computing the comment. Hence, we use a separate state for the comments.
+Also the < should not be included in LANGLE. So we need a new state.
+
+* Line number has to be handled separately inside this state.
+* Errors or illegal characters are also handled separately inside this function.
+
+Difference between t_ignore and t_error, and pass and t.lexer.skip():
+
+t_ignore and t_error:
+
+t_ignore is a special case. The characters specified by this rule are completely ignored
+in the input stream while matching. lexdata and lexpos are not affected as the characters are not completely removed.
+
+t_error handles lexing errors caused by illegal characters.
+t.value has the rest of the input string that has not yet been tokenized (including the current character as
+the current character couldn't be lexed either)
+
+pass and lexer.skip():
+pass is a python statement that is used as a placeholder where a statement is expected.
+For example instead of return something we could have pass.
+pass doesn't do anything.
+
+    If the character doesn't match with any of the rules, then t_error is triggered and the process is again
+    started automatically after skipping n number of characters mentioned in lexer.skip(n) function call.
+    Note: lexer.skip(n) is an essential component in the t_error string specification. without this, the process
+    of lexing will not continue on its own.
+    We cannot replace this statement with pass as that wouldn't tell the lexer to begin the process again.
+
+lexer.skip(n) skips the input by n number of characters.
+lexer.skip(1) means the next character will be scanned.
+lexer.skip(2) means the next character is skipped and the one after that is scanned, etc.
+This is useful for t_error function as when this function is entered all the handling is done by the user.
+The next character in the input stream is not automatically scanned. So, lexer.skip() becomes mandatory.
+
+To grab supposedly a block of C code from html or something, we need to keep track of the level of curly braces
+as there could be nested levels of code. Therefore, we should use lexer levels as shows in the docs.
+
+Flow of lexing: Actual breaking the string into tokens is done only when lexer.token() method is called.
+Preference order of functional specifications and string specifications (at each call of lexer.token()):
+  t_ignore string -> All functional specifications (first one first) -> All string specifications bigger regexp first (except t_ignore) -> t_error function
+1. t_ignore is a special rule that is executed first to remove all the beginning characters from the current fragment of the string.
+If the ignored characters come after the string or in between the string, they are left as they were.
+Example:
+import ply.lex as lex
+
+tokens = (
+    'defa',
+)
+
+t_ignore = '\t\v\r ' # the last character is a space.
+def t_defa(t):
+  r'.+'
+  return t
+
+def t_error(t):
+  t.lexer.skip(1)
+
+lexer = lex.lex()
+lexer.input("""  after 2 spaces comes a \t and then 4 spaces    """)
+print "Ignored characters are \\t\\v\\r and space"
+while True:
+  tok = lexer.token()
+  if not tok: break
+  print tok
+
+OUTPUT:
+Ignored characters are \t\v\r and space
+LexToken(defa,'after 2 spaces comes a \t and then 4 spaces    ',1,2)
+This also shows that the ignored characters do count towards the lexpos.
+
+write about t_error and lexer.skip()
+and then about the difference lexer.skip() and pass
+
+
+1. Everytime the .token() is called, t_ignore rule is executed and all the characters trimmed from the
+beginning of the input stream.
+2. When a character matches a rule, all the subsequent characters are matched with the same rule
+until one of the characters doesn't match.
+  i. if it doesn't match and we are already in an accepting state, it will be returned to the environment calling
+      the .token function and lexing would start from this point when the next call to the .token() is made.
+      Note: The lexdata remains the same throughout the lexing process. The t_ignore rules doesn't mutate the
+            lexdata.
+  ii. if it doesn't match and we are not in an accepting state, the first character from that .token() call will
+      be matched with the subsequent rules and the process continues.
+  iii.if the character doesn't match with any of the rules, then t_error is triggered and the process is again
+      started automatically after skipping n number of characters mentioned in lexer.skip(n) function call.
+      Note: lexer.skip(n) is an essential component in the t_error string specification. without this, the process
+      of lexing will not continue on its own.
+      We cannot replace this statement with pass as that wouldn't tell the lexer to begin the process again.
+
+      This was the difference between lexer.skip(n) and pass.
